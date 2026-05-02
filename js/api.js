@@ -11,7 +11,9 @@ window.API = {
             if (idx === messages.length - 1 && msg.role === 'user' && modifier) {
                 content = `${modifier} ${content}`;
             }
-            apiMessages.push({ role: msg.role, content });
+            // A API da OpenRouter exige 'assistant', mas internamente usamos 'bot'
+            const role = msg.role === 'bot' ? 'assistant' : msg.role;
+            apiMessages.push({ role, content });
         });
 
         const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {

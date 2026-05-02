@@ -1,7 +1,7 @@
 // js/library.js
 window.Library = {
     chunks: [],
-    lastAddedIds: [], // IDs dos chunks adicionados na última chamada de addDocument
+    lastAddedIds: [],
 
     init() {
         const saved = localStorage.getItem('lm_library');
@@ -14,12 +14,7 @@ window.Library = {
         localStorage.setItem('lm_library', JSON.stringify(this.chunks));
     },
 
-    /**
-     * Adiciona um documento à biblioteca.
-     * @param {string} text - texto completo
-     * @param {object} options - { category, key, tags, chunkSize }
-     * @returns {number} quantidade de chunks adicionados
-     */
+    // Adiciona documento com metadados (category, key, tags)
     async addDocument(text, options = {}) {
         const {
             category = '',
@@ -32,14 +27,13 @@ window.Library = {
         this.lastAddedIds = [];
 
         for (const chunk of chunks) {
-            // Evita duplicatas exatas
             if (this.chunks.some(c => c.text === chunk)) continue;
 
             const embedding = await this.getEmbedding(chunk);
             const id = Date.now() + Math.random();
             this.chunks.push({
                 id,
-                key: key || this._generateKey(chunk), // gera automático se não informado
+                key: key || this._generateKey(chunk),
                              text: chunk,
                              embedding,
                              category,
@@ -51,12 +45,12 @@ window.Library = {
         return this.lastAddedIds.length;
     },
 
-    // Gera uma chave simples (primeiras 5 palavras)
+    // Gera uma key automática (primeiras 5 palavras)
     _generateKey(text) {
         return text.split(/\s+/).slice(0, 5).join(' ').toLowerCase();
     },
 
-    // Divide o texto em pedaços (respeita parágrafos)
+    // Divide texto em chunks (respeita parágrafos)
     splitText(text, size = 300) {
         const paragraphs = text.split(/\n\s*\n/);
         const chunks = [];
@@ -80,6 +74,7 @@ window.Library = {
         return chunks.length ? chunks : [text];
     },
 
+    // Gera embedding via OpenRouter
     async getEmbedding(text) {
         const { apiKey } = window.Storage.getConfig();
         const res = await fetch('https://openrouter.ai/api/v1/embeddings', {
@@ -97,19 +92,13 @@ window.Library = {
         return data.data[0].embedding;
     },
 
-    /**
-     * Busca chunks por similaridade.
-     * @param {string} query - texto de busca
-     * @param {number} topK - quantos retornar
-     * @param {string} category - categoria opcional (filtro)
-     * @returns {Array} trechos ordenados por similaridade
-     */
-    async search(query, topK = 3, category = '') {
+    // Busca semântica com filtros (categoria e/ou key parcial)
+    async search(query, topK = 5, category = '', key = '') {
         if (this.chunks.length === 0) return [];
         let candidates = this.chunks;
-        if (category) {
-            candidates = this.chunks.filter(c => c.category === category);
-        }
+        if (category) candidates = candidates.filter(c => c.category === category);
+        if (key) candidates = candidates.filter(c => c.key.toLowerCase().includes(key.toLowerCase()));
+
         if (candidates.length === 0) return [];
 
         const queryEmbedding = await this.getEmbedding(query);
@@ -121,7 +110,18 @@ window.Library = {
             score: this.cosineSimilarity(queryEmbedding, chunk.embedding)
         }));
         scored.sort((a, b) => b.score - a.score);
-        return scored.slice(0, topK).filter(s => s.score > 0.3);
+        return scored.slice(0, topK).filter(s => s.score > 0.2);
+    },
+
+    // Busca exata por key
+    findByKey(searchKey) {
+        searchKey = searchKey.toLowerCase().trim();
+        return this.chunks.find(c => c.key.toLowerCase() === searchKey) || null;
+    },
+
+    // Busca exata por ID
+    findById(id) {
+        return this.chunks.find(c => c.id === id) || null;
     },
 
     cosineSimilarity(a, b) {
@@ -148,14 +148,28 @@ window.Library = {
     updateChunk(id, updates) {
         const chunk = this.chunks.find(c => c.id === id);
         if (chunk) {
-            if (updates.key) chunk.key = updates.key;
-            if (updates.category) chunk.category = updates.category;
-            if (updates.tags) chunk.tags = updates.tags;
+            if (updates.key !== undefined) chunk.key = updates.key;
+            if (updates.category !== undefined) chunk.category = updates.category;
+            if (updates.tags !== undefined) chunk.tags = updates.tags;
             this.save();
             return true;
         }
         return false;
+    },
+
+    // 🔄 Reprocessar: gera keys automáticas para chunks que estão sem key
+    autoKeyAll() {
+        let count = 0;
+        this.chunks.forEach(chunk => {
+            if (!chunk.key || chunk.key.trim() === '') {
+                chunk.key = this._generateKey(chunk.text);
+                count++;
+            }
+        });
+        if (count > 0) this.save();
+        return count;
     }
 };
 
+// Inicializa ao carregar
 window.Library.init();

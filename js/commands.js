@@ -1,18 +1,16 @@
 // js/commands.js
 window.Commands = {
     async execute(text) {
-        // Comandos de busca e informação
+        if (!text) return null;
+
         if (text.startsWith('$wiki')) {
             const term = text.replace('$wiki', '').trim() || 'Busca livre';
             return await window.API.fetchWiki(term);
         }
 
-        // Adicionar documento à biblioteca
         if (text.startsWith('$adicionar ')) {
             const args = text.replace('$adicionar ', '');
-            let category = '';
-            let key = '';
-            let conteudo = args;
+            let category = '', key = '', conteudo = args;
 
             const catMatch = args.match(/categoria:(\S+)/);
             if (catMatch) {
@@ -30,7 +28,6 @@ window.Commands = {
             return `📚 Adicionado à biblioteca: ${qtde} trechos. Categoria: ${category || 'nenhuma'}.`;
         }
 
-        // Comando $math (sessão de pilha interativa) – aceita uma ou várias instruções
         if (text.startsWith('$math ')) {
             const tudo = text.replace('$math ', '').trim();
             if (!tudo) return 'Uso: $math <número|operador|show|cls>';
@@ -43,54 +40,71 @@ window.Commands = {
                 if (token.includes(' ')) {
                     const subTokens = token.split(/\s+/);
                     for (const sub of subTokens) {
-                        if (sub !== '') {
-                            lastResult = window.MathSession.execute(sub);
-                        }
+                        if (sub !== '') lastResult = window.MathSession.execute(sub);
                     }
                 } else {
                     lastResult = window.MathSession.execute(token);
                 }
             }
 
-            if (lines.length > 1 || (lines[0] === 'show' || lines[0] === 'cls')) {
-                return lastResult;
-            }
-
+            if (lines.length > 1 || (lines[0] === 'show' || lines[0] === 'cls')) return lastResult;
             const topo = window.MathSession.stack.length > 0 ? window.MathSession.stack[window.MathSession.stack.length - 1] : null;
-            if (topo !== null) {
-                return `Operação realizada. Topo da pilha: ${topo}`;
-            }
+            if (topo !== null) return `Operação realizada. Topo da pilha: ${topo}`;
             return lastResult;
         }
 
-        // Buscar na biblioteca
+        // ⭐ $buscar com suporte a key: e id:
         if (text.startsWith('$buscar ')) {
             const args = text.replace('$buscar ', '');
-            let category = '';
-            let termo = args;
+            let category = '', key = '', termo = args;
+            let id = null;
 
-            const catMatch = args.match(/cat:(\S+)/);
+            const catMatch = termo.match(/cat:(\S+)/);
             if (catMatch) {
                 category = catMatch[1];
                 termo = termo.replace(catMatch[0], '').trim();
             }
+            const keyMatch = termo.match(/key:(\S+)/);
+            if (keyMatch) {
+                key = keyMatch[1];
+                termo = termo.replace(keyMatch[0], '').trim();
+            }
+            const idMatch = termo.match(/id:(\S+)/);
+            if (idMatch) {
+                id = parseFloat(idMatch[1]);
+                termo = termo.replace(idMatch[0], '').trim();
+            }
 
+            // Busca por ID (mais específica)
+            if (id) {
+                const chunk = window.Library.findById(id);
+                if (chunk) return `[Trecho único] (cat: ${chunk.category || 'geral'}) ${chunk.text}`;
+                return '🔍 Nenhum chunk com esse ID.';
+            }
+
+            // Busca por key exata
+            if (key && !termo) {
+                const chunk = window.Library.findByKey(key);
+                if (chunk) return `[Trecho único] (cat: ${chunk.category || 'geral'}) ${chunk.text}`;
+                return '🔍 Nenhum chunk com essa key.';
+            }
+
+            // Busca semântica (termo obrigatório se não usou id/key)
             if (!termo) return '🔍 Por favor, informe um termo para busca.';
-            const resultados = await window.Library.search(termo, 3, category);
+
+            const resultados = await window.Library.search(termo, 5, category, key);
             if (resultados.length === 0) return '🔍 Nada encontrado na biblioteca.';
             return resultados.map((r, i) =>
             `[Trecho ${i+1}] (cat: ${r.category || 'geral'}) ${r.text}`
             ).join('\n\n');
         }
 
-        // Listar categorias da biblioteca
         if (text.startsWith('$categorias')) {
             const lista = window.Library.listCategories();
             if (lista.length === 0) return '📂 Nenhuma categoria na biblioteca.';
             return '📂 Categorias:\n' + lista.join('\n');
         }
 
-        // Rotular um chunk
         if (text.startsWith('$rotular ')) {
             const args = text.replace('$rotular ', '');
             let id = null;
@@ -120,7 +134,26 @@ window.Commands = {
             return `✅ Chunk ${id} atualizado.`;
         }
 
-        // Calculadora RPN
+        if (text.startsWith('$paper ')) {
+            const query = text.replace('$paper ', '').trim();
+            if (!query) return 'Uso: $paper <termos de busca>';
+            const papers = await this.fetchPapers(query);
+            if (papers.length === 0) return '📚 Nenhum artigo com resumo encontrado.';
+            for (const p of papers) {
+                await window.Library.addDocument(`${p.title}\n\n${p.summary}`, {
+                    category: 'paper',
+                    key: p.title,        // ← agora a key é o título do artigo
+                    tags: p.tags
+                });
+            }
+            return `📚 Indexados ${papers.length} artigos sobre "${query}".`;
+        }
+
+        if (text.trim() === '$reprocessar') {
+            const count = window.Library.autoKeyAll();
+            return `✅ Keys automáticas geradas para ${count} chunk(s).`;
+        }
+
         if (text.startsWith('$calc rpn ')) {
             const expr = text.replace('$calc rpn ', '').trim();
             const resultado = window.RPN.eval(expr);
@@ -128,7 +161,6 @@ window.Commands = {
             return `Resultado: ${resultado.result}`;
         }
 
-        // Calculadora simples (expressão comum)
         if (text.startsWith('$calc ')) {
             const expr = text.replace('$calc ', '').trim();
             return this.calc(expr);
@@ -137,16 +169,29 @@ window.Commands = {
         return null;
     },
 
+    // Versão simplificada e robusta: usa APENAS a API oficial do Internet Archive,
+    // sem downloads de arquivos que causam CORS.
+    async fetchPapers(query, max = 10) {
+        const url = `https://archive.org/advancedsearch.php?q=(${encodeURIComponent(query)}) AND mediatype:texts&fl[]=identifier&fl[]=title&fl[]=description&fl[]=format&output=json&rows=${max}`;
+        const res = await fetch(url);
+        if (!res.ok) return [];
+        const data = await res.json();
+        const docs = data.response?.docs || [];
+        return docs
+        .filter(doc => doc.description && doc.description.length > 200)
+        .map(doc => ({
+            id: doc.identifier,
+            title: doc.title || doc.identifier,
+            summary: doc.description.substring(0, 4000),
+                     tags: []
+        }));
+    },
+
     calc(expr) {
         const constants = {
-            'pi': Math.PI,
-            'e': Math.E,
-            'tau': Math.PI * 2,
-            'phi': (1 + Math.sqrt(5)) / 2,
-            'ln2': Math.LN2,
-            'ln10': Math.LN10,
-            'sqrt2': Math.SQRT2,
-            'sqrt1_2': Math.SQRT1_2
+            'pi': Math.PI, 'e': Math.E, 'tau': Math.PI * 2,
+            'phi': (1 + Math.sqrt(5)) / 2, 'ln2': Math.LN2,
+            'ln10': Math.LN10, 'sqrt2': Math.SQRT2, 'sqrt1_2': Math.SQRT1_2
         };
         let processed = expr;
         for (const [name, value] of Object.entries(constants)) {
@@ -156,18 +201,14 @@ window.Commands = {
 
         const functions = [
             'sin', 'cos', 'tan', 'sqrt', 'log', 'exp', 'abs',
-            'ceil', 'floor', 'round',
-            'asin', 'acos', 'atan', 'log10', 'pow'
+            'ceil', 'floor', 'round', 'asin', 'acos', 'atan', 'log10', 'pow'
         ];
         functions.forEach(fn => {
             const regex = new RegExp('\\b' + fn + '\\s*\\(', 'gi');
             processed = processed.replace(regex, 'Math.' + fn + '(');
         });
 
-        processed = processed
-        .replace(/[^0-9+\-*/().%a-zA-Z,\s]/g, '')
-        .trim();
-
+        processed = processed.replace(/[^0-9+\-*/().%a-zA-Z,\s]/g, '').trim();
         if (!processed) return 'Erro: expressão vazia.';
 
         const safeMath = processed.replace(/Math\.\w+\s*\(/g, match => {
@@ -179,13 +220,10 @@ window.Commands = {
         console.log('[calc] expressão final:', processed);
         try {
             const result = new Function('return ' + processed)();
-            if (typeof result === 'number' && isFinite(result)) {
-                return `Resultado: ${result}`;
-            }
+            if (typeof result === 'number' && isFinite(result)) return `Resultado: ${result}`;
             return 'Erro: resultado não numérico.';
         } catch (e) {
             return `Erro no cálculo: ${e.message}`;
         }
     }
-
 };

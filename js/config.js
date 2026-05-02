@@ -1,6 +1,6 @@
-// config.js
+// js/config.js
 window.CONFIG = {
-    DEFAULT_MODEL: 'meta-llama/llama-3.1-8b-instruct:free',
+    DEFAULT_MODEL: 'meta-llama/llama-3.2-3b-instruct:free',
     ANALYZER_MODEL: 'microsoft/phi-4',
-    SYSTEM_PROMPT: 'Você é o lowmanager. Responda em português de forma clara, minimalista e direta.'
+    SYSTEM_PROMPT: 'Você é o lowmanager, um assistente inteligente e prestativo. Responda em português de forma clara e completa, mas sem enrolação. Se o usuário pedir uma explicação, forneça-a por inteiro. Se uma ferramenta for necessária, use-a.'
 };
