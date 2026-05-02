@@ -67,18 +67,29 @@
     </aside>
   </div>
 <!-- Carregamento dos scripts (a ordem é importante!) -->
-  <script src="js/config.js"></script>
+  <!-- Configuração e armazenamento -->
+<script src="js/config.js"></script>
 <script src="js/storage.js"></script>
+
+<!-- APIs e biblioteca -->
 <script src="js/api.js"></script>
 <script src="js/library.js"></script>
+
+<!-- Motor RPN (precisa estar antes de commands.js) -->
+<script src="js/MLO/rpn-engine.js"></script>
+
+<!-- Comandos (usa RPN, API, Library) -->
 <script src="js/commands.js"></script>
-<!-- MLO modules -->
+
+<!-- Módulos do orquestrador (usam Commands, Memorizer, Cleaner) -->
 <script src="js/MLO/cleaner.js"></script>
 <script src="js/MLO/memorizer.js"></script>
 <script src="js/MLO/tool-loop.js"></script>
-<!-- Orchestrator principal -->
+
+<!-- Orquestrador principal (usa todos os anteriores) -->
 <script src="js/orchestrator.js"></script>
-<!-- App principal -->
+
+<!-- Aplicação final (usa o Orquestrador) -->
 <script src="js/app.js"></script>
 </body>
 </html>

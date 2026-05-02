@@ -1,11 +1,13 @@
 // js/commands.js
 window.Commands = {
     async execute(text) {
+        // Comandos de busca e informação
         if (text.startsWith('$wiki')) {
             const term = text.replace('$wiki', '').trim() || 'Busca livre';
             return await window.API.fetchWiki(term);
         }
 
+        // Adicionar documento à biblioteca
         if (text.startsWith('$adicionar ')) {
             const args = text.replace('$adicionar ', '');
             let category = '';
@@ -28,6 +30,7 @@ window.Commands = {
             return `📚 Adicionado à biblioteca: ${qtde} trechos. Categoria: ${category || 'nenhuma'}.`;
         }
 
+        // Buscar na biblioteca
         if (text.startsWith('$buscar ')) {
             const args = text.replace('$buscar ', '');
             let category = '';
@@ -47,12 +50,14 @@ window.Commands = {
             ).join('\n\n');
         }
 
+        // Listar categorias da biblioteca
         if (text.startsWith('$categorias')) {
             const lista = window.Library.listCategories();
             if (lista.length === 0) return '📂 Nenhuma categoria na biblioteca.';
             return '📂 Categorias:\n' + lista.join('\n');
         }
 
+        // Rotular um chunk
         if (text.startsWith('$rotular ')) {
             const args = text.replace('$rotular ', '');
             let id = null;
@@ -82,30 +87,42 @@ window.Commands = {
             return `✅ Chunk ${id} atualizado.`;
         }
 
+        // Calculadora RPN
+        if (text.startsWith('$calc rpn ')) {
+            const expr = text.replace('$calc rpn ', '').trim();
+            const resultado = window.RPN.eval(expr);
+            if (resultado.error) return `Erro RPN: ${resultado.error}`;
+            return `Resultado: ${resultado.result}`;
+        }
+
+        // Calculadora simples (expressão comum)
         if (text.startsWith('$calc ')) {
             const expr = text.replace('$calc ', '').trim();
             return this.calc(expr);
         }
 
+        // Nenhum comando reconhecido
         return null;
     },
 
+    // Calculadora simples (mantida por compatibilidade)
     calc(expr) {
-        // Substitui ** por Math.pow (mais seguro)
-        let safeExpr = expr.replace(/(\d+(?:\.\d+)?)\s*\*\*\s*(\d+(?:\.\d+)?)/g, 'Math.pow($1, $2)');
+        const sanitized = expr
+        .replace(/[^0-9+\-*/().%\s]/g, '')
+        .trim();
 
-        // Remove caracteres perigosos, mas mantém letras (para funções como Math.pow, Math.sqrt...)
-        safeExpr = safeExpr.replace(/[^0-9+\-*/().a-zA-Z,\s]/g, '');
+        if (!sanitized) return 'Erro: expressão vazia.';
+
+        console.log('[calc] expressão final:', sanitized);
 
         try {
-            const result = new Function('return ' + safeExpr)();
+            const result = new Function('return ' + sanitized)();
             if (typeof result === 'number' && isFinite(result)) {
                 return `Resultado: ${result}`;
             }
-            return 'Erro: expressão inválida.';
+            return 'Erro: resultado não numérico.';
         } catch (e) {
             return `Erro no cálculo: ${e.message}`;
         }
     }
-
 };

@@ -1,4 +1,4 @@
-// js/tool-loop.js
+// js/MLO/tool-loop.js
 window.ToolLoop = {
     _buildSystemPrompt() {
         const tools = [
@@ -6,20 +6,35 @@ window.ToolLoop = {
             '$buscar cat:<categoria> <termo> - busca por categoria.',
             '$wiki <termo> - consulta a Wikipedia.',
             '$categorias - lista categorias.',
-            '$calc <expressão> - cálculo matemático.',
+            '$calc <expressão> - cálculo matemático simples.',
+            '$calc rpn <instruções> - cálculo em notação polonesa reversa (para múltiplas etapas).',
             '$memorizar - salva resumo da conversa.'
         ].join('\n');
 
         return `Você é o lowmanager. Responda em português de forma clara e direta.
 
-        Ferramentas:
+        Ferramentas disponíveis:
         ${tools}
 
-        PROTOCOLO:
-        1. Para qualquer cálculo, responda APENAS com "$calc <expressão>".
-        2. Após receber o resultado, responda com o valor exato.
-        3. Para informações factuais, use $buscar ou $wiki.
-        4. Ao final de respostas úteis, coloque "$memorizar" em linha separada.`;
+        OPERADORES ACEITOS NO $calc rpn:
+        Aritméticos: + - * / ** sqrt
+        Trigonométricos (ângulo em radianos): sin cos tan asin acos atan
+        Logaritmos/Exponencial: log log10 exp
+        Constantes: pi e
+        Arredondamento: ceil floor round
+        Controle de pilha: swap
+
+        PROTOCOLO OBRIGATÓRIO:
+        1. REGRA CRÍTICA: Quando usar QUALQUER ferramenta ($calc, $calc rpn, $buscar, $wiki, $memorizar...), sua resposta deve conter APENAS a linha da ferramenta. Não escreva NADA antes ou depois.
+        2. Para cálculos com mais de 3 operações, divida em etapas menores usando vários $calc rpn. Após obter um resultado intermediário, use-o na próxima chamada.
+        Exemplo:
+        Usuário: "raiz de 9 vezes 2 mais 3"
+        Assistente: $calc rpn 9 sqrt 2 *
+        (resultado: 6)
+        Assistente: $calc rpn 6 3 +
+        3. Após receber o resultado da ferramenta, responda com o valor EXATO retornado (Ex.: "O resultado é 417.43"). NÃO arredonde, NÃO invente, NÃO recuse.
+        4. Para informações factuais, use $buscar ou $wiki.
+        5. Ao final de respostas úteis, coloque "$memorizar" em uma linha separada.`;
     },
 
     async run(prompt, historyMessages) {
@@ -59,22 +74,25 @@ window.ToolLoop = {
                 return answerText;
             }
 
+            // 🛡️ Se a resposta inteira começa com '$', extrai APENAS a primeira linha com comando
             if (reply.trim().startsWith('$')) {
-                console.log(`🛠️ Ferramenta pura: ${reply}`);
+                const firstCommandLine = lines.find(l => l.trim().startsWith('$')).trim();
+                console.log(`🛠️ Ferramenta pura (extraída): ${firstCommandLine}`);
+
                 let toolResult;
-                if (reply.trim().startsWith('$memorizar')) {
+                if (firstCommandLine.startsWith('$memorizar')) {
                     toolResult = await window.Memorizer.memorize(messages);
                 } else {
-                    toolResult = await window.Commands.execute(reply.trim());
+                    toolResult = await window.Commands.execute(firstCommandLine);
                 }
 
-                if (reply.trim().startsWith('$calc ')) {
+                if (firstCommandLine.startsWith('$calc ')) {
                     const numberMatch = toolResult.match(/Resultado:\s*([\d.]+)/);
                     if (numberMatch) return `O resultado exato é ${numberMatch[1]}.`;
                     return toolResult;
                 }
 
-                messages.push({ role: 'assistant', content: reply });
+                messages.push({ role: 'assistant', content: firstCommandLine });
                 messages.push({ role: 'user', content: toolResult });
                 continue;
             }
