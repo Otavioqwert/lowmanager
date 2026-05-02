@@ -20,7 +20,6 @@ window.MathSession = {
             return `Empilhado ${parseFloat(token)}. (${this.stack.length} valor(es) na pilha)`;
         }
 
-        // Operadores e funções (mesma lógica do RPN, mas mantendo estado)
         switch (token) {
             case '+': if (this.stack.length < 2) return 'Erro: operandos insuficientes para +';
             this.stack.push(this.stack.pop() + this.stack.pop()); break;
@@ -29,10 +28,10 @@ window.MathSession = {
             case '*': if (this.stack.length < 2) return 'Erro: operandos insuficientes para *';
             this.stack.push(this.stack.pop() * this.stack.pop()); break;
             case '/': if (this.stack.length < 2) return 'Erro: operandos insuficientes para /';
-            { const d = this.stack.pop(); if (d === 0) return 'Erro: divisão por zero'; const n = this.stack.pop(); this.stack.push(n / d); } break;
+            { const divisor = this.stack.pop(); if (divisor === 0) return 'Erro: divisão por zero'; const dividendo = this.stack.pop(); this.stack.push(dividendo / divisor); } break;
             case '**':
             case 'pow': if (this.stack.length < 2) return 'Erro: operandos insuficientes para **';
-            { const e = this.stack.pop(), b = this.stack.pop(); this.stack.push(Math.pow(b, e)); } break;
+            { const expoente = this.stack.pop(), base = this.stack.pop(); this.stack.push(Math.pow(base, expoente)); } break;
             case 'sqrt': if (this.stack.length < 1) return 'Erro: operandos insuficientes para sqrt';
             this.stack.push(Math.sqrt(this.stack.pop())); break;
             case 'sin': if (this.stack.length < 1) return 'Erro: operandos insuficientes para sin';
@@ -66,7 +65,7 @@ window.MathSession = {
             default: return `Erro: operador/função desconhecida '${token}'`;
         }
 
-        const top = this.stack.length > 0 ? this.stack[this.stack.length - 1] : null;
-        return `Operação realizada. Pilha: ${this.stack.length} valor(es). Topo: ${top ?? 'vazio'}`;
+        const topo = this.stack.length > 0 ? this.stack[this.stack.length - 1] : null;
+        return `Operação realizada. Pilha: ${this.stack.length} valor(es). Topo: ${topo ?? 'vazio'}`;
     }
 };
