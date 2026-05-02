@@ -7,7 +7,8 @@ window.ToolLoop = {
             '$wiki <termo> - consulta a Wikipedia.',
             '$categorias - lista categorias.',
             '$calc <expressão> - cálculo matemático simples.',
-            '$calc rpn <instruções> - cálculo em notação polonesa reversa (para múltiplas etapas).',
+            '$calc rpn <instruções> - cálculo em notação polonesa reversa.',
+            '$math <instrução> - calculadora interativa passo a passo. Use para cálculos grandes.',
             '$memorizar - salva resumo da conversa.'
         ].join('\n');
 
@@ -16,25 +17,12 @@ window.ToolLoop = {
         Ferramentas disponíveis:
         ${tools}
 
-        OPERADORES ACEITOS NO $calc rpn:
-        Aritméticos: + - * / ** sqrt
-        Trigonométricos (ângulo em radianos): sin cos tan asin acos atan
-        Logaritmos/Exponencial: log log10 exp
-        Constantes: pi e
-        Arredondamento: ceil floor round
-        Controle de pilha: swap
-
         PROTOCOLO OBRIGATÓRIO:
-        1. REGRA CRÍTICA: Quando usar QUALQUER ferramenta ($calc, $calc rpn, $buscar, $wiki, $memorizar...), sua resposta deve conter APENAS a linha da ferramenta. Não escreva NADA antes ou depois.
-        2. Para cálculos com mais de 3 operações, divida em etapas menores usando vários $calc rpn. Após obter um resultado intermediário, use-o na próxima chamada.
-        Exemplo:
-        Usuário: "raiz de 9 vezes 2 mais 3"
-        Assistente: $calc rpn 9 sqrt 2 *
-        (resultado: 6)
-        Assistente: $calc rpn 6 3 +
-        3. Após receber o resultado da ferramenta, responda com o valor EXATO retornado (Ex.: "O resultado é 417.43"). NÃO arredonde, NÃO invente, NÃO recuse.
+        1. REGRA CRÍTICA: Ao usar ferramentas, sua resposta deve conter APENAS a linha da ferramenta.
+        2. Para cálculos grandes (mais de 3 operações), USE EXCLUSIVAMENTE o comando $math. Envie uma instrução por vez (ex.: $math 2, $math sqrt, $math 3 *). Após enviar a última instrução, não faça mais nada – o sistema exibirá automaticamente o resultado final.
+        3. Exemplo de sequência para elevar ao cubo: $math 3 **   (NUNCA use "cub" ou palavras, apenas operadores como **, sqrt, etc.)
         4. Para informações factuais, use $buscar ou $wiki.
-        5. Ao final de respostas úteis, coloque "$memorizar" em uma linha separada.`;
+        5. Ao final, coloque "$memorizar" em linha separada.`;
     },
 
     async run(prompt, historyMessages) {
@@ -48,7 +36,7 @@ window.ToolLoop = {
             }
         }
 
-        const MAX_ITERATIONS = 5;
+        const MAX_ITERATIONS = 20;  // suficiente para sequências longas
         for (let i = 0; i < MAX_ITERATIONS; i++) {
             const reply = await window.API.getChatResponse(messages, '');
 
@@ -92,13 +80,32 @@ window.ToolLoop = {
                     return toolResult;
                 }
 
+                // Adiciona ao histórico normalmente (tanto $math quanto outros)
                 messages.push({ role: 'assistant', content: firstCommandLine });
                 messages.push({ role: 'user', content: toolResult });
                 continue;
             }
 
+            // Se não é comando, é a resposta final (texto comum)
+            // Se a última ferramenta foi um $math, retorna o topo da pilha antes de devolver a resposta
+            const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+            if (lastAssistant && lastAssistant.content.trim().startsWith('$math ')) {
+                const topo = window.MathSession.stack.length > 0 ? window.MathSession.stack[window.MathSession.stack.length - 1] : null;
+                if (topo !== null) {
+                    return `O resultado final é ${topo}.`;
+                }
+            }
             return reply;
         }
-        return '⚠️ Loop de ferramentas excedeu o limite.';
+
+        // Se atingiu o limite de iterações sem resposta final
+        const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+        if (lastAssistant && lastAssistant.content.trim().startsWith('$math ')) {
+            const topo = window.MathSession.stack.length > 0 ? window.MathSession.stack[window.MathSession.stack.length - 1] : null;
+            if (topo !== null) {
+                return `O resultado final é ${topo}.`;
+            }
+        }
+        return '⚠️ Loop de ferramentas excedeu o limite sem resultado.';
     }
 };

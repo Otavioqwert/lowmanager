@@ -30,6 +30,13 @@ window.Commands = {
             return `📚 Adicionado à biblioteca: ${qtde} trechos. Categoria: ${category || 'nenhuma'}.`;
         }
 
+        // Comando $math (sessão de pilha interativa)
+        if (text.startsWith('$math ')) {
+            const instruction = text.replace('$math ', '').trim();
+            if (!instruction) return 'Uso: $math <número|operador|show|cls>';
+            return window.MathSession.execute(instruction);
+        }
+
         // Buscar na biblioteca
         if (text.startsWith('$buscar ')) {
             const args = text.replace('$buscar ', '');
