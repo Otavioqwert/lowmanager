@@ -25,24 +25,33 @@ window.Library = {
 
         const chunks = this.splitText(text, chunkSize);
         this.lastAddedIds = [];
+        const errors = [];
 
         for (const chunk of chunks) {
             if (this.chunks.some(c => c.text === chunk)) continue;
-
-            const embedding = await this.getEmbedding(chunk);
-            const id = Date.now() + Math.random();
-            this.chunks.push({
-                id,
-                key: key || this._generateKey(chunk),
-                             text: chunk,
-                             embedding,
-                             category,
-                             tags
-            });
-            this.lastAddedIds.push(id);
+            try {
+                const embedding = await this.getEmbedding(chunk);
+                const id = Date.now() + Math.random();
+                this.chunks.push({
+                    id,
+                    key: key || this._generateKey(chunk),
+                                 text: chunk,
+                                 embedding,
+                                 category,
+                                 tags
+                });
+                this.lastAddedIds.push(id);
+            } catch (e) {
+                errors.push(`Falha ao processar trecho "${chunk.substring(0, 30)}...": ${e.message}`);
+            }
         }
+
         this.save();
-        return this.lastAddedIds.length;
+        return {
+            added: this.lastAddedIds.length,
+            total: chunks.length,
+            errors: errors
+        };
     },
 
     // Gera uma key automática (primeiras 5 palavras)
@@ -84,7 +93,7 @@ window.Library = {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'openai/text-embedding-3-small',
+                model: 'perplexity/pplx-embed-v1-0.6b',
                 input: text
             })
         });
@@ -168,6 +177,37 @@ window.Library = {
         });
         if (count > 0) this.save();
         return count;
+    },
+
+    // Processa chunks sem key em lotes, com pausa entre cada chunk
+    async reprocessarEmLotes(chunksPorLote = 1, intervaloMs = 3000, onProgress = null) {
+        const semKey = this.chunks.filter(c => !c.key || c.key.trim() === '');
+        const total = semKey.length;
+        let processados = 0;
+
+        for (let i = 0; i < total; i += chunksPorLote) {
+            const lote = semKey.slice(i, i + chunksPorLote);
+            for (const chunk of lote) {
+                chunk.key = this._generateKey(chunk.text);
+                processados++;
+            }
+            this.save();
+
+            if (onProgress) {
+                onProgress({
+                    processados,
+                    total,
+                    porcentagem: Math.round((processados / total) * 100)
+                });
+            }
+
+            // Pausa entre os lotes (exceto no último)
+            if (i + chunksPorLote < total) {
+                await new Promise(resolve => setTimeout(resolve, intervaloMs));
+            }
+        }
+
+        return { total, processados };
     }
 };
 

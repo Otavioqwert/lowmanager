@@ -1,7 +1,7 @@
 // app.js
 window.App = {
     currentChatId: null,
-    messages:[],
+    messages: [],
     isTyping: false,
 
     dom: {
@@ -31,6 +31,27 @@ window.App = {
         } else {
             this.loadChat(chats[0].id);
         }
+
+        window.addEventListener('reprocessarIniciar', (e) => {
+            const { intervaloMs } = e.detail;
+            this.criarOverlayProgresso();
+            window._cancelarReprocesso = false;
+
+            window.Library.reprocessarEmLotes(1, intervaloMs, (progresso) => {
+                if (window._cancelarReprocesso) {
+                    throw new Error('CANCELADO');
+                }
+                this.atualizarProgresso(progresso);
+            }).then(result => {
+                const overlay = document.getElementById('progressoOverlay');
+                if (overlay) overlay.remove();
+                console.log(`✅ Reprocessamento concluído: ${result.processados} chunks.`);
+            }).catch(err => {
+                if (err.message !== 'CANCELADO') console.error(err);
+                const overlay = document.getElementById('progressoOverlay');
+                if (overlay) overlay.remove();
+            });
+        });
     },
 
     bindEvents() {
@@ -122,7 +143,7 @@ window.App = {
             div.onclick = () => {
                 if (this.currentChatId !== chat.id) {
                     this.loadChat(chat.id);
-                    if(window.innerWidth <= 640) this.dom.sidebar.classList.remove('open');
+                    if (window.innerWidth <= 640) this.dom.sidebar.classList.remove('open');
                 }
             };
 
@@ -182,53 +203,53 @@ window.App = {
         this.scrollToBottom();
         this.showTypingIndicator();
 
-        try {
-            let botReply = '';
+        // Usa o ErrorHandler para proteger a resposta
+        const botReply = await this.getBotReply(text, isDefaultTitle);
 
-            // 🧩 Todo comando direto do usuário ($) é tratado aqui
-            if (text.startsWith('$')) {
-                // $memorizar usa o Memorizer, outros usam Commands
-                if (text.trim().startsWith('$memorizar')) {
-                    botReply = await window.Memorizer.memorize(this.messages);
-                } else {
-                    botReply = await window.Commands.execute(text);
-                }
+        this.removeTypingIndicator();
+        const botEl = this.createBotMsgPlaceholder();
+        await this.typeEffect(botEl, botReply, 15);
 
-                // Se for $wiki e título padrão, atualiza
-                if (text.startsWith('$wiki') && isDefaultTitle) {
-                    const term = text.replace('$wiki', '').trim() || 'Busca livre';
-                    this.updateTitleUI(this.currentChatId, `Wiki: ${term}`);
-                }
-
-            } else {
-                // ⚡ Fluxo normal com o orquestrador (sempre ativo)
-                botReply = await window.Orchestrator.process(text, this.messages);
-
-                // Gerar título se ainda for padrão (apenas quando não for comando)
-                if (isDefaultTitle) {
-                    window.API.generateTitle(text).then(newTitle => {
-                        if (newTitle) this.updateTitleUI(this.currentChatId, newTitle);
-                    });
-                }
-            }
-
-            this.removeTypingIndicator();
-            const botEl = this.createBotMsgPlaceholder();
-            await this.typeEffect(botEl, botReply, 15);
-
-            this.messages.push({ role: 'bot', content: botReply });
-            window.Storage.saveMessages(this.currentChatId, this.messages);
-
-        } catch (e) {
-            this.removeTypingIndicator();
-            const botEl = this.createBotMsgPlaceholder();
-            botEl.textContent = `[Erro]: ${e.message}`;
-        }
+        this.messages.push({ role: 'bot', content: botReply });
+        window.Storage.saveMessages(this.currentChatId, this.messages);
 
         this.isTyping = false;
         this.dom.input.disabled = false;
         this.dom.sendBtn.disabled = false;
         this.dom.input.focus();
+    },
+
+    /**
+     * Obtém a resposta do bot (comando ou orquestrador), com proteção contra null.
+     * @param {string} text - mensagem do usuário
+     * @param {boolean} isDefaultTitle - se o título ainda é padrão
+     * @returns {Promise<string>} resposta final segura
+     */
+    async getBotReply(text, isDefaultTitle) {
+        // Comandos diretos ($)
+        if (text.startsWith('$')) {
+            const reply = text.trim().startsWith('$memorizar')
+            ? await window.Memorizer.memorize(this.messages)
+            : await window.Commands.execute(text);
+
+            if (text.startsWith('$wiki') && isDefaultTitle) {
+                const term = text.replace('$wiki', '').trim() || 'Busca livre';
+                this.updateTitleUI(this.currentChatId, `Wiki: ${term}`);
+            }
+
+            return window.ErrorHandler.safeString(reply);
+        }
+
+        // Fluxo normal com orquestrador
+        const reply = await window.Orchestrator.process(text, this.messages);
+
+        if (isDefaultTitle) {
+            window.API.generateTitle(text).then(newTitle => {
+                if (newTitle) this.updateTitleUI(this.currentChatId, newTitle);
+            });
+        }
+
+        return window.ErrorHandler.safeString(reply);
     },
 
     showTypingIndicator() {
@@ -281,7 +302,58 @@ window.App = {
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+    },
+
+    criarOverlayProgresso() {
+        const old = document.getElementById('progressoOverlay');
+        if (old) old.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'progressoOverlay';
+        overlay.style.cssText = `
+        position: fixed; bottom: 80px; right: 20px;
+        background: var(--bg-panel); border: 1px solid var(--accent);
+        border-radius: 8px; padding: 10px 16px;
+        font-family: var(--font-mono); font-size: 0.8rem;
+        color: var(--text-primary); z-index: 1000;
+        min-width: 220px; box-shadow: 0 0 12px rgba(0,212,168,0.2);
+        `;
+
+        overlay.innerHTML = `
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+        <span>🔄 Reprocessando...</span>
+        <span id="progressoPorcentagem">0%</span>
+        </div>
+        <div style="background:var(--bg-surface); border-radius:4px; height:6px; overflow:hidden;">
+        <div id="progressoBarra" style="width:0%; height:100%; background:var(--accent); transition: width 0.3s;"></div>
+        </div>
+        <div id="progressoTexto" style="margin-top:4px; font-size:0.7rem; color:var(--text-mid);">0 de 0 chunks</div>
+        <button id="cancelarReprocesso" style="margin-top:6px; background:none; border:1px solid var(--danger); color:var(--danger); border-radius:4px; padding:2px 8px; cursor:pointer; font-size:0.7rem;">Cancelar</button>
+        `;
+
+        document.body.appendChild(overlay);
+
+        document.getElementById('cancelarReprocesso').onclick = () => {
+            window._cancelarReprocesso = true;
+            overlay.remove();
+        };
+    },
+
+    atualizarProgresso(data) {
+        const barra = document.getElementById('progressoBarra');
+        const porcentagem = document.getElementById('progressoPorcentagem');
+        const texto = document.getElementById('progressoTexto');
+        if (barra && porcentagem && texto) {
+            barra.style.width = `${data.porcentagem}%`;
+            porcentagem.textContent = `${data.porcentagem}%`;
+            texto.textContent = `${data.processados} de ${data.total} chunks`;
+        }
     }
 };
 
-document.addEventListener('DOMContentLoaded', () => window.App.init());
+// Inicialização segura (fora do objeto)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => window.App.init());
+} else {
+    window.App.init();
+}

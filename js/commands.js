@@ -3,31 +3,61 @@ window.Commands = {
     async execute(text) {
         if (!text) return null;
 
-        if (text.startsWith('$wiki')) {
-            const term = text.replace('$wiki', '').trim() || 'Busca livre';
-            return await window.API.fetchWiki(term);
+        // Navegador de parágrafos interativo
+        if (text.startsWith('$navegar ')) {
+            const args = text.replace('$navegar ', '').trim();
+            if (!args) return 'Uso: $navegar <termo> ou $navegar <termo> lote <número>';
+
+            const loteMatch = args.match(/^(.*)\s+lote\s+(\d+)$/i);
+            if (loteMatch) {
+                const termo = loteMatch[1].trim();
+                const lote = parseInt(loteMatch[2]);
+                const resumo = await window.ParagraphNavigator.buscarLote(termo, lote);
+                if (!resumo) return `🔍 Nenhum resultado no lote ${lote}.`;
+                return resumo;
+            }
+
+            // Modo interativo
+            const resultados = await window.RawStorage.search(args);
+            if (resultados.length === 0) return '🔍 Nenhum parágrafo encontrado.';
+            window.ParagraphNavigator.iniciar(args, resultados);
+            return `🔍 ${resultados.length} parágrafos encontrados. Use as setas ou os botões para navegar.`;
         }
 
+        // $adicionar: salva frio E quente (embeddings). Opção de pular embeddings via "cru:1"
         if (text.startsWith('$adicionar ')) {
             const args = text.replace('$adicionar ', '');
             let category = '', key = '', conteudo = args;
+            let chunkSize = 300, onlyRaw = false;
 
             const catMatch = args.match(/categoria:(\S+)/);
-            if (catMatch) {
-                category = catMatch[1];
-                conteudo = conteudo.replace(catMatch[0], '').trim();
-            }
+            if (catMatch) { category = catMatch[1]; conteudo = conteudo.replace(catMatch[0], '').trim(); }
             const keyMatch = conteudo.match(/key:(\S+)/);
-            if (keyMatch) {
-                key = keyMatch[1];
-                conteudo = conteudo.replace(keyMatch[0], '').trim();
-            }
+            if (keyMatch) { key = keyMatch[1]; conteudo = conteudo.replace(keyMatch[0], '').trim(); }
+            const chunkMatch = conteudo.match(/chunkSize:(\d+)/);
+            if (chunkMatch) { chunkSize = parseInt(chunkMatch[1]); conteudo = conteudo.replace(chunkMatch[0], '').trim(); }
+            const rawMatch = conteudo.match(/cru:(\d)/);
+            if (rawMatch) { onlyRaw = (rawMatch[1] === '1'); conteudo = conteudo.replace(rawMatch[0], '').trim(); }
 
             if (!conteudo) return '📚 Nenhum texto fornecido para adicionar.';
-            const qtde = await window.Library.addDocument(conteudo, { category, key });
-            return `📚 Adicionado à biblioteca: ${qtde} trechos. Categoria: ${category || 'nenhuma'}.`;
+
+            // 1. Sempre salva frio
+            const titulo = key || conteudo.split(/\s+/).slice(0, 5).join(' ');
+            const rawId = await window.RawStorage.add(titulo, conteudo, category || 'manual');
+
+            let msg = `📄 Texto bruto salvo (ID: ${rawId}).`;
+
+            if (!onlyRaw) {
+                // 2. Também indexa na biblioteca vetorial
+                const result = await window.Library.addDocument(conteudo, { category, key, chunkSize });
+                msg += ` 📚 Indexados ${result.added} trechos. Categoria: ${category || 'nenhuma'}.`;
+            } else {
+                msg += ' (apenas armazenamento frio, sem embeddings).';
+            }
+            return msg;
         }
 
+        // $math (sessão de pilha interativa)
         if (text.startsWith('$math ')) {
             const tudo = text.replace('$math ', '').trim();
             if (!tudo) return 'Uso: $math <número|operador|show|cls>';
@@ -53,7 +83,7 @@ window.Commands = {
             return lastResult;
         }
 
-        // ⭐ $buscar com suporte a key: e id:
+        // $buscar (suporte a cat:, key:, id:)
         if (text.startsWith('$buscar ')) {
             const args = text.replace('$buscar ', '');
             let category = '', key = '', termo = args;
@@ -75,21 +105,18 @@ window.Commands = {
                 termo = termo.replace(idMatch[0], '').trim();
             }
 
-            // Busca por ID (mais específica)
             if (id) {
                 const chunk = window.Library.findById(id);
                 if (chunk) return `[Trecho único] (cat: ${chunk.category || 'geral'}) ${chunk.text}`;
                 return '🔍 Nenhum chunk com esse ID.';
             }
 
-            // Busca por key exata
             if (key && !termo) {
                 const chunk = window.Library.findByKey(key);
                 if (chunk) return `[Trecho único] (cat: ${chunk.category || 'geral'}) ${chunk.text}`;
                 return '🔍 Nenhum chunk com essa key.';
             }
 
-            // Busca semântica (termo obrigatório se não usou id/key)
             if (!termo) return '🔍 Por favor, informe um termo para busca.';
 
             const resultados = await window.Library.search(termo, 5, category, key);
@@ -134,24 +161,101 @@ window.Commands = {
             return `✅ Chunk ${id} atualizado.`;
         }
 
+        // $web: extrai texto limpo via Jina Reader, salva frio e indexa
+        if (text.startsWith('$web ')) {
+            const url = text.replace('$web ', '').trim();
+            if (!url) return 'Uso: $web <url>';
+            const content = await this.fetchWebPage(url);
+            if (!content || content.length < 100) return '⚠️ Não foi possível extrair conteúdo relevante da URL.';
+            const title = url.split('/').pop().replace(/[-_]/g, ' ') || url;
+
+            const rawId = await window.RawStorage.add(title, content, 'web');
+            const result = await window.Library.addDocument(content, { category: 'web', key: title });
+            return `🌐 Conteúdo de "${title}" adicionado. ID bruto: ${rawId}. ${result.added} trechos indexados. Categoria: web.`;
+        }
+
+        // $paper: busca artigos, salva frio cada um, indexa
         if (text.startsWith('$paper ')) {
             const query = text.replace('$paper ', '').trim();
             if (!query) return 'Uso: $paper <termos de busca>';
             const papers = await this.fetchPapers(query);
             if (papers.length === 0) return '📚 Nenhum artigo com resumo encontrado.';
+            let totalAdded = 0, totalErrors = 0;
             for (const p of papers) {
-                await window.Library.addDocument(`${p.title}\n\n${p.summary}`, {
+                await window.RawStorage.add(p.title, p.summary, 'paper');
+                const result = await window.Library.addDocument(`${p.title}\n\n${p.summary}`, {
                     category: 'paper',
-                    key: p.title,        // ← agora a key é o título do artigo
+                    key: p.title,
                     tags: p.tags
                 });
+                totalAdded += result.added;
+                if (result.errors) totalErrors += result.errors.length;
             }
-            return `📚 Indexados ${papers.length} artigos sobre "${query}".`;
+            let msg = `📚 Indexados ${papers.length} artigos sobre "${query}" (${totalAdded} trechos adicionados).`;
+            if (totalErrors > 0) msg += ` ⚠️ ${totalErrors} falhas de embedding.`;
+            return msg;
         }
 
         if (text.trim() === '$reprocessar') {
-            const count = window.Library.autoKeyAll();
-            return `✅ Keys automáticas geradas para ${count} chunk(s).`;
+            const args = text.replace('$reprocessar', '').trim();
+            let chunksPorMinuto = 20;
+            const match = args.match(/(\d+)/);
+            if (match) chunksPorMinuto = parseInt(match[1]);
+
+            const intervaloMs = Math.round(60000 / chunksPorMinuto);
+
+            window.dispatchEvent(new CustomEvent('reprocessarIniciar', {
+                detail: { intervaloMs, chunksPorMinuto }
+            }));
+
+            return `⏳ Processamento iniciado em segundo plano (~${chunksPorMinuto} chunks/min). Acompanhe a barra de progresso.`;
+        }
+
+        // $raw comandos: listar, ver, buscar, remover
+        if (text.startsWith('$raw listar')) {
+            const lista = await window.RawStorage.list();
+            if (lista.length === 0) return '📄 Nenhum documento bruto armazenado.';
+            return '📄 Documentos brutos:\n' + lista.map(d => `[${d.id}] ${d.title} (${d.size} caracteres, cat: ${d.category})`).join('\n');
+        }
+
+        if (text.startsWith('$raw ver ')) {
+            const id = text.replace('$raw ver ', '').trim();
+            const content = await window.RawStorage.get(id);
+            if (!content) return '⚠️ Documento não encontrado.';
+            return `📄 Conteúdo de "${id}":\n${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
+        }
+
+        if (text.startsWith('$raw buscar ')) {
+            const args = text.replace('$raw buscar ', '').trim();
+            if (!args) return 'Uso: $raw buscar <termo> [limite]';
+
+            // Extrai limite no final: um número precedido por espaço (ex.: ... 5)
+            const limitMatch = args.match(/\s+(\d+)$/);
+            let term = args;
+            let limit = 20;   // padrão rápido
+            if (limitMatch) {
+                term = args.substring(0, args.lastIndexOf(limitMatch[0])).trim();
+                limit = parseInt(limitMatch[1]);
+            }
+
+            const results = await window.RawStorage.search(term, null, limit);
+            if (results.length === 0) return '🔍 Nenhum parágrafo encontrado com esse termo.';
+            return results.map((r, i) => `[${i+1}] (${r.docTitle})\n${r.paragraph}...`).join('\n\n');
+        }
+
+        if (text.startsWith('$raw remover ')) {
+            const id = text.replace('$raw remover ', '').trim();
+            const ok = await window.RawStorage.remove(id);
+            return ok ? '✅ Documento removido.' : '⚠️ Documento não encontrado.';
+        }
+
+        // $aquecer: move um documento frio para a biblioteca vetorial
+        if (text.startsWith('$aquecer ')) {
+            const id = text.replace('$aquecer ', '').trim();
+            const content = await window.RawStorage.get(id);
+            if (!content) return '⚠️ Documento não encontrado.';
+            const result = await window.Library.addDocument(content, { category: 'raw', key: id });
+            return `🔥 Aquecido! ${result.added} trechos indexados. Categoria: raw.`;
         }
 
         if (text.startsWith('$calc rpn ')) {
@@ -169,8 +273,19 @@ window.Commands = {
         return null;
     },
 
-    // Versão simplificada e robusta: usa APENAS a API oficial do Internet Archive,
-    // sem downloads de arquivos que causam CORS.
+    async fetchWebPage(url) {
+        try {
+            const res = await fetch(`https://r.jina.ai/${url}`, {
+                headers: { 'Accept': 'text/plain' }
+            });
+            if (!res.ok) return null;
+            return await res.text();
+        } catch (e) {
+            console.warn('⚠️ [Jina Reader] Erro ao buscar URL:', e);
+            return null;
+        }
+    },
+
     async fetchPapers(query, max = 10) {
         const url = `https://archive.org/advancedsearch.php?q=(${encodeURIComponent(query)}) AND mediatype:texts&fl[]=identifier&fl[]=title&fl[]=description&fl[]=format&output=json&rows=${max}`;
         const res = await fetch(url);
