@@ -2,20 +2,16 @@
 window.ToolLoop = {
     _buildSystemPrompt() {
         const tools = [
-            // Biblioteca Indexada
             '$buscar <termo> - busca semântica na biblioteca.',
             '$buscar cat:<categoria> <termo> - busca por categoria.',
             '$buscar key:<palavra-chave> - recupera EXATAMENTE o trecho com aquela key.',
             '$buscar id:<id> - recupera EXATAMENTE o trecho com aquele ID.',
-            // Armazenamento Frio e Aquecimento
             '$raw listar - lista documentos brutos.',
-            '$raw buscar <termo> - busca por palavra-chave nos textos brutos (frios). Usar quando precisa de termos EXATOS ou quando $buscar falha.',
+            '$raw buscar <termo> [limite] - busca textual (ex.: oil prices, sem aspas).',
             '$raw ver <id> - mostra o texto bruto de um documento.',
             '$aquecer <id> - indexa um documento bruto na biblioteca (gasta embeddings).',
-            // Navegação Interativa e Seletiva
             '$navegar <termo> - abre navegador interativo parágrafo a parágrafo.',
-            '$navegar <termo> lote <número> - retorna resumo do lote (primeiras palavras de cada parágrafo). Use para varreduras seletivas em documentos grandes.',
-            // Outras Ferramentas
+            '$navegar <termo> lote <número> - retorna resumo do lote (primeiras palavras de cada parágrafo).',
             '$wiki <termo> - consulta a Wikipedia.',
             '$web <url> - extrai e indexa o texto de uma página da internet.',
             '$paper <termo> - busca artigos científicos.',
@@ -23,16 +19,34 @@ window.ToolLoop = {
             '$calc <expressão> - cálculo matemático.',
             '$calc rpn <instruções> - cálculo RPN.',
             '$math <instrução> - calculadora interativa.',
-            '$memorizar - salva resumo da conversa.'
+            '$memorizar - salva resumo da conversa.',
+            '$sn criar <id> <tag> <conteúdo> - cria uma nota temporária (da IA).',
+            '$sn ver <id> - lê uma nota.',
+            '$sn listar - lista todas as notas (IA e usuário).',
+            '$sn buscar <termo> - busca textual nas notas.',
+            '$sn deletar <id> - remove uma nota.',
+            '$sn limpar - remove todas as notas de sessão da IA.',
+            '$sn user criar <id> <tag> <conteúdo> - cria uma nota permanente (do usuário).'
         ].join('\n');
 
         return `Você é o lowmanager, um assistente prestativo. Responda em português de forma direta e completa, sem pedir desculpas desnecessárias.
+
+        PROTOCOLO DE MEMÓRIA DE TRABALHO:
+        1. Antes de responder a perguntas que exijam informações externas, consulte sua sandbox com '$sn listar ai' e '$sn buscar <termo>'.
+        2. Se encontrar notas relevantes, use-as. Se não, faça as buscas necessárias e salve os achados com '$sn criar <id> <tag> <conteúdo>'.
+        3. Ao final da conversa, pode limpar com '$sn limpar' se desejar.
 
         Ferramentas:
         ${tools}
 
         PROTOCOLO DE BUSCA AVANÇADA:
-        - Para buscas textuais, use sempre um limite pequeno (ex.: 10) para agilizar. Exemplo: $raw buscar "termo" 10. Se precisar de mais resultados, aumente o limite na próxima chamada.
+        REGRA DE OURO: Se o usuário mencionar um documento específico ou pedir uma análise com várias etapas, você DEVE usar as ferramentas $raw buscar e $navegar lote ANTES de qualquer cálculo. NUNCA invente números ou use a calculadora com texto.
+        - NUNCA inclua o nome do documento ou qualquer texto extra no comando $raw buscar. Exemplo ERRADO: $raw buscar oil prices no documento "iran war news". Exemplo CORRETO: $raw buscar oil prices 10.
+        - Ao usar $raw buscar, NÃO inclua o nome do documento no termo. Apenas a palavra‑chave. Ex.: $raw buscar oil prices 10.
+        - Se a busca retornar parágrafos, o sistema informará automaticamente quantos foram encontrados. Use ESSE número real nos cálculos. Se retornar "Nenhum parágrafo", use 0.
+        - Para raiz quadrada, use $calc rpn <número> sqrt. Ex.: $calc rpn 19 sqrt. NUNCA use √.
+        - NUNCA use aspas ao passar termos para os comandos $raw buscar, $buscar ou $navegar. Ex.: escreva $raw buscar oil prices em vez de $raw buscar "oil prices".
+        - Para buscas textuais, use sempre um limite pequeno (ex.: 10) para agilizar. Exemplo: $raw buscar termo 10. Se precisar de mais resultados, aumente o limite na próxima chamada.
         1. Sempre que o usuário pedir uma informação que possa estar num documento grande, NÃO tente ler tudo de uma vez.
         2. Use a estratégia de VARREDURA SELETIVA:
         a. Adapte o idioma: se o documento estiver em inglês, faça a varredura com termos em inglês (ex.: "sanctions" para sanções, "conflict" para conflito).
@@ -48,9 +62,6 @@ window.ToolLoop = {
     },
 
     async run(prompt, historyMessages) {
-        // ═══════════════════════════════════════════
-        // ATALHO: busca rápida em categorias conhecidas
-        // ═══════════════════════════════════════════
         if (/categoria\s*(paper|web|raw)/i.test(prompt) && /buscar|procure|ache/i.test(prompt)) {
             const catMatch = prompt.match(/categoria\s*(paper|web|raw)/i);
             if (catMatch) {
@@ -60,9 +71,6 @@ window.ToolLoop = {
             }
         }
 
-        // ═══════════════════════════════════════════
-        // ETAPA 0: Classificador de intenção automática
-        // ═══════════════════════════════════════════
         const intent = await window.IntentClassifier.classify(prompt);
         console.log(`🎯 [ToolLoop] Intenção detectada: ${intent.tool} -> "${intent.param}"`);
 
@@ -79,9 +87,6 @@ window.ToolLoop = {
             return await window.Memorizer.memorize(historyMessages);
         }
 
-        // ═══════════════════════════════════════════
-        // ETAPA 1: Loop de ferramentas com varredura seletiva
-        // ═══════════════════════════════════════════
         const systemMsg = { role: 'system', content: this._buildSystemPrompt() };
         const messages = [systemMsg];
         for (let i = 0; i < historyMessages.length; i++) {
@@ -92,21 +97,26 @@ window.ToolLoop = {
             }
         }
 
-        const MAX_ITERATIONS = 10;   // Permite até 10 lotes de varredura, se necessário
+        const MAX_ITERATIONS = 10;
         for (let i = 0; i < MAX_ITERATIONS; i++) {
             const reply = await window.API.getChatResponse(messages, '');
 
             const lines = reply.split('\n');
-            const toolLines = lines.filter(l => l.trim().startsWith('$'));
-            const answerLines = lines.filter(l => !l.trim().startsWith('$'));
+            const toolLines = lines.filter(l => {
+                const trimmed = l.trim();
+                return trimmed.startsWith('$') || /^\d+\.\s+\$/.test(trimmed);
+            }).map(l => l.replace(/^\d+\.\s+/, '').trim());
+
+            const answerLines = lines.filter(l => {
+                const trimmed = l.trim();
+                return !trimmed.startsWith('$') && !/^\d+\.\s+\$/.test(trimmed);
+            });
             let answerText = answerLines.join('\n').trim();
 
-            // Se não há comandos, é a resposta final.
             if (toolLines.length === 0) {
                 return reply;
             }
 
-            // Processa cada comando de forma independente
             let toolResults = '';
             for (const toolCommand of toolLines) {
                 const cmd = toolCommand.trim();
@@ -115,24 +125,25 @@ window.ToolLoop = {
                 try {
                     toolResult = await window.Commands.execute(cmd);
 
-                    // Se a IA usou $navegar lote e recebeu um resumo, ela pode decidir continuar ou parar.
-                    // O resultado já é um resumo enxuto, então apenas o retornamos.
-
-                    // Se foi um $buscar e não encontrou nada, sugere o $raw buscar
-                    if (cmd.startsWith('$buscar ') && toolResult.includes('Nada encontrado na biblioteca')) {
-                        const searchTerm = cmd.replace('$buscar ', '').replace(/cat:\S+\s*/, '').trim();
-                        toolResult += `\n💡 Sugestão: Tente uma busca simples nos textos brutos com "$raw buscar ${searchTerm}".`;
+                    // Contagem automática para buscas textuais
+                    if (cmd.startsWith('$raw buscar ') && !toolResult.includes('Nenhum parágrafo encontrado')) {
+                        const count = (toolResult.match(/\[\d+\]/g) || []).length;
+                        toolResult += `\n*** TOTAL REAL DE PARÁGRAFOS ENCONTRADOS: ${count} ***\nUse este número exato nas próximas etapas.`;
                     }
 
-                    // Se foi um $navegar lote, a IA pode querer continuar a varredura
-                    // O resultado inclui "Lote X/Y", então ela sabe se há mais lotes.
+                    if (cmd.startsWith('$buscar ') && toolResult.includes('Nada encontrado na biblioteca')) {
+                        const searchTerm = cmd.replace('$buscar ', '').replace(/cat:\S+\s*/, '').trim();
+                        const cleanTerm = searchTerm.replace(/^["']|["']$/g, '');
+                        console.log(`⚡ Nada na indexada, tentando raw buscar: "${cleanTerm}"`);
+                        const rawResult = await window.Commands.execute(`$raw buscar ${cleanTerm} 10`);
+                        toolResult = `🔍 Resultados da busca textual (documentos frios):\n${rawResult}`;
+                    }
                 } catch (e) {
                     toolResult = `Erro ao executar ${cmd}: ${e.message}`;
                 }
                 toolResults += (toolResults ? '\n' : '') + toolResult;
             }
 
-            // Retorna o texto da IA seguido dos resultados das ferramentas
             return answerText ? `${answerText}\n\n${toolResults}` : toolResults;
         }
 

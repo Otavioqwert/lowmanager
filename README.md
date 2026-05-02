@@ -53,30 +53,54 @@ Modelos muito "criativos" podem ignorar o protocolo de ferramentas; nesses casos
 | `$reprocessar [velocidade]` | Gera keys automáticas para chunks não rotulados, com barra de progresso. |
 | `$memorizar` | Salva um resumo da conversa atual na biblioteca. |
 
-## 🏗️ Estrutura do projeto 
+### 📝 Sandbox de memória (notas da IA e do usuário)
+| Comando | Descrição |
+|---------|-----------|
+| `$sn criar <id> <tag> <conteúdo>` | Cria uma nota temporária (da IA). |
+| `$sn ver <id>` | Lê o conteúdo de uma nota. |
+| `$sn listar [ai|user]` | Lista notas (IA ou usuário). |
+| `$sn buscar <termo>` | Busca textual nas notas. |
+| `$sn deletar <id>` | Remove uma nota. |
+| `$sn limpar` | Remove todas as notas de sessão da IA. |
+| `$sn user criar <id> <tag> <conteúdo>` | Cria uma nota permanente (do usuário). |
+
+## 🏗️ Estrutura do projeto
+
 js/
 ├── MLO/ # Módulos especializados
 │ ├── cleaner.js # Limpeza de prompts (Phi-4)
 │ ├── memorizer.js # Geração de resumos
 │ ├── tool-loop.js # Loop de ferramentas (orquestração da IA)
-│ ├── intent-classifier.js # Classificador de intenção
+│ ├── intent-classifier.js# Classificador de intenção
 │ ├── math-session.js # Sessão interativa de pilha
 │ ├── rpn-engine.js # Motor RPN
 │ ├── paragraph-navigator.js # Navegador interativo
-│ └── raw-storage.js # Armazenamento frio (IndexedDB)
-├── commands.js # Definição de todos os comandos
+│ ├── raw-storage.js # Armazenamento frio (IndexedDB)
+│ └── memory-manager.js # Gerenciador da sandbox (IndexedDB)
+├── DBO/ # Módulos de banco de dados orientado
+│ ├── dbo-library.js # Curadoria da biblioteca
+│ ├── dbo-search.js # Buscas (vetorial, textual, navegação)
+│ ├── dbo-math.js # Cálculo e RPN
+│ ├── dbo-ingest.js # Ingestão de dados externos (wiki, web, paper)
+│ └── dbo-sandbox.js # Comandos da sandbox de memória
+├── commands.js # Roteador de comandos
 ├── library.js # Biblioteca vetorial (embeddings + busca)
 ├── api.js # Chamadas à OpenRouter
 ├── storage.js # Persistência de chats (localStorage)
 ├── config.js # Modelos padrão e system prompt
 ├── app.js # Interface e lógica de chat
 └── error-handler.js # Tratamento seguro de erros
+
+
 ## 💡 Dicas
 
 - **Economize tokens**: use `$raw buscar` (textual) sempre que possível; embeddings são caros.  
 - **Documentos grandes**: capture com `$web` e explore com `$navegar <termo> lote 1`, depois lote 2, etc.  
 - **Histórico poluído**: abra um novo chat quando mudar radicalmente de assunto.  
-- **Cotas**: modelos `:free` têm limites diários; prefira modelos pagos e configure o limite da chave na OpenRouter.
+- **Cotas**: modelos `:free` têm limites diários; prefira modelos pagos e configure o limite da chave na OpenRouter.  
+- **Sandbox**: a IA pode anotar descobertas com `$sn criar` e revê‑las com `$sn listar`. O usuário tem seu próprio espaço com `$sn user criar`.
 
 ## 📄 Licença
 MIT — use como quiser.
+
+

@@ -45,12 +45,14 @@ window.Memorizer = {
         const categoria = parsed.categoria || 'Geral';
         const resumo = parsed.resumo || content;
 
-        const qtde = await window.Library.addDocument(resumo, {
+        const result = await window.Library.addDocument(resumo, {
             category: categoria,
             key: titulo,
             tags: [categoria]
         });
 
-        return `✅ Memorizado: "${titulo}" (${qtde} trecho(s), categoria: ${categoria}).`;
+        // 🔧 Usa result.added para obter o número correto de chunks
+        const numChunks = (result && result.added !== undefined) ? result.added : 0;
+        return `✅ Memorizado: "${titulo}" (${numChunks} trecho(s), categoria: ${categoria}).`;
     }
 };
