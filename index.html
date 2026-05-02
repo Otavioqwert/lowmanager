@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>lowmanager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+
+    <!-- COLUNA ESQUERDA (SIDEBAR) -->
+    <aside class="col-left" id="sidebar">
+      <div class="brand">
+        <span class="brand-name">lowmanager</span>
+        <span class="brand-dot">_</span>
+      </div>
+
+      <button id="newChatBtn" class="new-chat-btn">
+        <span class="btn-icon">+</span> novo chat
+      </button>
+
+      <div id="historyContainer" class="history"></div>
+
+      <div class="config-panel">
+        <div class="config-row">
+          <label class="config-label">modelo</label>
+          <input id="modelInput" type="text" class="config-input" placeholder="provedor/modelo">
+          <button id="modelSetBtn" class="config-btn">ok</button>
+        </div>
+        <div class="config-row">
+          <label class="config-label">api key</label>
+          <input id="apiKeyInput" type="password" class="config-input" placeholder="sk-or-v1-...">
+          <button id="apiKeyBtn" class="config-btn">ok</button>
+        </div>
+      </div>
+
+      <div class="bottom-bar">
+        <button id="clearAllBtn" class="trash-btn">⌫ limpar tudo</button>
+      </div>
+    </aside>
+
+    <!-- COLUNA CENTRAL (CHAT) -->
+    <main class="col-center">
+      <div class="chat-header">
+        <button id="menuToggleBtn" class="menu-toggle" title="Menu">☰</button>
+        <span id="chatTitle" class="chat-title">—</span>
+        <span id="modelBadge" class="model-badge"></span>
+      </div>
+
+      <div id="chatMessages" class="chat-messages"></div>
+
+      <div class="chat-input-area">
+        <textarea id="chatInput" class="chat-input" placeholder="mensagem... (use $wiki para pesquisar)" rows="1"></textarea>
+        <button id="sendBtn" class="send-btn" title="Enviar">↑</button>
+      </div>
+    </main>
+
+    <!-- COLUNA DIREITA (DETALHES) -->
+    <aside class="col-right">
+      <div class="details-placeholder">
+        <span class="details-icon">◈</span>
+        <span>detalhes</span>
+      </div>
+    </aside>
+  </div>
+<!-- Carregamento dos scripts (a ordem é importante!) -->
+  <script src="js/config.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/api.js"></script>
+<script src="js/library.js"></script>
+<script src="js/commands.js"></script>
+<!-- MLO modules -->
+<script src="js/MLO/cleaner.js"></script>
+<script src="js/MLO/memorizer.js"></script>
+<script src="js/MLO/tool-loop.js"></script>
+<!-- Orchestrator principal -->
+<script src="js/orchestrator.js"></script>
+<!-- App principal -->
+<script src="js/app.js"></script>
+</body>
+</html>
+</body>
+</html>
