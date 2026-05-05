@@ -3,6 +3,14 @@ window.Commands = {
     async execute(text) {
         if (!text) return null;
 
+        if (text.startsWith('$anotar')) {
+            return await window.DBO_Sandbox.execute(text);
+        }
+
+        if (text.startsWith('$sn')) {
+            return await window.DBO_Sandbox.execute(text);
+        }
+
         if (text.startsWith('$sn')) {
             return await window.DBO_Sandbox.execute(text);
         }

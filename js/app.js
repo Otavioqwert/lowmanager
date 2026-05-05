@@ -213,6 +213,17 @@ window.App = {
         this.messages.push({ role: 'bot', content: botReply });
         window.Storage.saveMessages(this.currentChatId, this.messages);
 
+        // 🧠 AUTO‑MEMORIZAÇÃO (opcional): externaliza memória se a resposta contiver "informação relevante"
+        // O setTimeout evita travar o typing effect e a interface após a resposta.
+        const userText = text; // captura para o closure
+        setTimeout(() => {
+            if (!userText.startsWith('$') && botReply.includes('informação relevante')) {
+                window.Memorizer.memorize(this.messages)
+                .then(() => console.log('🧠 Memória externalizada automaticamente.'))
+                .catch(e => console.warn('⚠️ Falha ao memorizar automaticamente', e));
+            }
+        }, 0);
+
         this.isTyping = false;
         this.dom.input.disabled = false;
         this.dom.sendBtn.disabled = false;

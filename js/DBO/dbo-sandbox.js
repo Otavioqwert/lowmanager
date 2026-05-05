@@ -3,6 +3,21 @@ window.DBO_Sandbox = {
     async execute(text) {
         if (!text) return null;
 
+        // 🆕 $anotar – atalho para criar nota rápida da IA
+        if (text.startsWith('$anotar ')) {
+            const args = text.replace('$anotar ', '').trim();
+            if (!args) return 'Uso: $anotar <id> <conteúdo>';
+
+            const spaceIndex = args.indexOf(' ');
+            if (spaceIndex === -1) return 'Uso: $anotar <id> <conteúdo>';
+
+            const id = args.substring(0, spaceIndex).trim();
+            const conteudo = args.substring(spaceIndex + 1).trim();
+            if (!conteudo) return '⚠️ Conteúdo vazio. Uso: $anotar <id> <conteúdo>';
+
+            return await window.MemoryManager.criar(id, 'anotação', conteudo);
+        }
+
         if (text.startsWith('$sn criar ')) {
             const args = text.replace('$sn criar ', '').trim();
             const parts = args.match(/^(\S+)\s+(\S+)\s+(.*)$/);
